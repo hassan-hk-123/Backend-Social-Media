@@ -339,13 +339,13 @@ router.patch('/change-password/:id', verifyToken, async (req, res) => {
 });
 
 router.get('/check-token', (req, res) => {
-  const token = req.cookies.token;
-  if (!token) return res.status(401).json({ valid: false });
+  const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ valid: false, message: 'No token' });
   try {
     jwt.verify(token, process.env.JWT_SECRET);
     res.json({ valid: true });
   } catch {
-    res.status(401).json({ valid: false });
+    res.status(401).json({ valid: false, message: 'Invalid token' });
   }
 });
 
