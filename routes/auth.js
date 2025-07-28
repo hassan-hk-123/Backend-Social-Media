@@ -159,10 +159,10 @@ router.post('/signin', async (req, res) => {
 router.post('/logout', (req, res) => {
   try {
     res.clearCookie('token', {
-      httpOnly: true,
-      secure: process.env.FRONTEND_URL,
-      sameSite: 'strict',
-      path: '/',
+       httpOnly: true,
+      secure: true,          // 🔐 Required for HTTPS
+      sameSite: "None",      // 🌐 Allow cross-domain
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
     res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
