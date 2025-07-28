@@ -135,13 +135,14 @@ router.post('/signin', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV, // Ye sahi tareeka hai
-        sameSite: 'lax', // Agar cross-origin, toh 'none' aur secure true
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        path: '/',
-      });
+
+  res.cookie('token', token, {
+  httpOnly: true,
+  secure: process.env.FRONTEND_URL === 'production', // Production mein HTTPS ke liye true
+  sameSite: 'lax', // Ya 'none' agar cross-origin chahiye, lekin phir secure true hona chahiye
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/',
+});
 
     res.json({
       message: 'Login successful',
