@@ -138,7 +138,7 @@ mongoose
   .then(() => { 
     console.log("MongoDB connected");
 
-    const PORT = process.env.PORT || 5000;
+    const PORT = process.env.PORT;
     server.listen(PORT, () => {
       console.log(`Server is running with Socket.IO on ${PORT}`);
     });
