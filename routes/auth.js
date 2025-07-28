@@ -136,13 +136,13 @@ router.post('/signin', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-  res.cookie('token', token, {
+ res.cookie("token", token, {
   httpOnly: true,
-  secure: process.env.FRONTEND_URL, // Production mein HTTPS ke liye true
-  sameSite: 'lax', // Ya 'none' agar cross-origin chahiye, lekin phir secure true hona chahiye
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-  path: '/',
+  secure: true,          // 🔐 Required for HTTPS
+  sameSite: "None",      // 🌐 Allow cross-domain
+  maxAge: 7 * 24 * 60 * 60 * 1000
 });
+
 
     res.json({
       message: 'Login successful',

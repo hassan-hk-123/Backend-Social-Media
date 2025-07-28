@@ -11,10 +11,11 @@ const server = http.createServer(app);
 
 // ✅ Step 1: Setup CORS before everything
 app.use(cors({
-  origin: process.env.FRONTEND_URL, // ✅ e.g. https://frontend-social-media-five.vercel.app
+  origin: "https://frontend-social-media-five.vercel.app",
   credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 }));
+
 
 // ✅ Step 2: Manual CORS headers (optional but safe)
 app.use((req, res, next) => {
