@@ -19,7 +19,7 @@ const transporter = nodemailer.createTransport({
 });
 
 router.use(cors({
-  origin: 'https://frontend-social-media-five.vercel.app', // Apna actual frontend URL
+  origin: process.env.FRONTEND_URL,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 }));
