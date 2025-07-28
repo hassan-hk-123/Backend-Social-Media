@@ -136,12 +136,13 @@ router.post('/signin', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+  res.cookie('token', token, {
+  httpOnly: true,
+  secure: process.env.FRONTEND_URL === 'production', // Production mein HTTPS ke liye true
+  sameSite: 'lax', // Ya 'none' agar cross-origin chahiye, lekin phir secure true hona chahiye
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/',
+});
 
     res.json({
       message: 'Login successful',
@@ -159,7 +160,7 @@ router.post('/logout', (req, res) => {
   try {
     res.clearCookie('token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.FRONTEND_URL === 'production',
       sameSite: 'strict',
       path: '/',
     });
@@ -339,7 +340,7 @@ router.patch('/change-password/:id', verifyToken, async (req, res) => {
 });
 
 router.get('/check-token', (req, res) => {
-  const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+  const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
   if (!token) return res.status(401).json({ valid: false, message: 'No token' });
   try {
     jwt.verify(token, process.env.JWT_SECRET);
