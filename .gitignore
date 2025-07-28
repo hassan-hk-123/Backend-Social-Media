@@ -1,0 +1,24 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Vercel files (if any generated automatically)
+.vercel/
+
+# Optional: ignore build folders if you have any
+dist/
+build/
+
+# Optional: ignore coverage reports
+coverage/
