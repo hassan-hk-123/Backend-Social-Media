@@ -138,7 +138,7 @@ router.post('/signin', async (req, res) => {
 
   res.cookie('token', token, {
   httpOnly: true,
-  secure: process.env.FRONTEND_URL === 'production', // Production mein HTTPS ke liye true
+  secure: process.env.FRONTEND_URL, // Production mein HTTPS ke liye true
   sameSite: 'lax', // Ya 'none' agar cross-origin chahiye, lekin phir secure true hona chahiye
   maxAge: 7 * 24 * 60 * 60 * 1000,
   path: '/',
@@ -160,7 +160,7 @@ router.post('/logout', (req, res) => {
   try {
     res.clearCookie('token', {
       httpOnly: true,
-      secure: process.env.FRONTEND_URL === 'production',
+      secure: process.env.FRONTEND_URL,
       sameSite: 'strict',
       path: '/',
     });
