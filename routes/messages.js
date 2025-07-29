@@ -36,7 +36,7 @@ router.get("/unread", auth, async (req, res) => {
 // Send a message
 router.post("/send", auth, async (req, res) => {
   try {
-    const { to, content, type, mediaUrl, tempId } = req.body
+    const { to, content, type, mediaUrl, tempId } = req.body;
 
     const message = new Message({
       from: req.user._id,
@@ -45,34 +45,34 @@ router.post("/send", auth, async (req, res) => {
       type: type || "text",
       mediaUrl: mediaUrl || "",
       status: "sent",
-    })
+    });
 
-    await message.save()
-    await message.populate("from to", "username avatarImg fullName")
+    await message.save();
+    await message.populate("from to", "username avatarImg fullName");
 
-    if (tempId) message._doc.tempId = tempId
+    if (tempId) message._doc.tempId = tempId;
 
-    const io = req.app.get("io")
-    const onlineUsers = req.app.get("onlineUsers")
+    const io = req.app.get("io");
+    const onlineUsers = req.app.get("onlineUsers");
 
     if (io) {
-      const toSocketId = onlineUsers.get(to.toString())
-      const fromSocketId = onlineUsers.get(req.user._id.toString())
+      const toSocketId = onlineUsers.get(to.toString());
+      const fromSocketId = onlineUsers.get(req.user._id.toString());
 
       if (toSocketId) {
-        io.to(toSocketId).emit("receive_message", message)
+        io.to(toSocketId).emit("receive_message", message); // Receiver
       }
       if (fromSocketId) {
-        io.to(fromSocketId).emit("receive_message", message)
+        io.to(fromSocketId).emit("message_sent", message); // Sender
       }
     }
 
-    res.json({ success: true, message })
+    res.json({ success: true, message });
   } catch (err) {
-    console.error("Error sending message:", err)
-    res.status(500).json({ success: false, error: "Server error", details: err.message })
+    console.error("Error sending message:", err);
+    res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
-})
+});
 
 // Fetch all messages between two users
 router.get("/:userId", auth, async (req, res) => {
