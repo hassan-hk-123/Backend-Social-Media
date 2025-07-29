@@ -9,62 +9,56 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Step 1: Setup CORS before everything
+// ✅ Step 1: Setup CORS
 app.use(cors({
-  origin: "https://frontend-social-media-five.vercel.app",
+  origin: process.env.FRONTEND_URL,
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 }));
 
-
-// ✅ Step 2: Manual CORS headers (optional but safe)
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", process.env.FRONTEND_URL);
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
-// ✅ Step 3: Parse cookies & JSON
+// ✅ Step 2: Parse cookies & JSON
 app.use(express.json());
 app.use(cookieParser());
 
-// ✅ Step 4: Basic route
+// ✅ Step 3: Basic route
 app.get("/", (req, res) => {
   res.send("Server is running");
 });
 
-// ✅ Step 5: Routes
+// ✅ Step 4: Routes
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/posts", require("./routes/posts"));
 app.use("/api/relationships", require("./routes/relationships"));
 app.use("/api/messages", require("./routes/messages"));
 app.use("/api/notifications", require("./routes/notifications"));
 
-// ✅ Step 6: Error handling middleware
+// ✅ Step 5: Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: "Error in Server" });
 });
 
-// ✅ Step 7: Socket.IO setup
+// ✅ Step 6: Socket.IO setup
 const io = new Server(server, {
   cors: {
     origin: process.env.FRONTEND_URL,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
-  }
+  },
+  pingTimeout: 60000, // 60 seconds
+  pingInterval: 25000, // 25 seconds
 });
 
-// ✅ Step 8: Socket logic
+// ✅ Step 7: Socket logic
 const onlineUsers = new Map();
 const Message = require('./models/Message');
 
 io.on("connection", (socket) => {
+  console.log(`New connection: ${socket.id}`);
+  socket.on("error", (err) => {
+    console.error("Socket Error:", err.message);
+  });
+
   socket.on("register", (userId) => {
     onlineUsers.set(userId, socket.id);
     socket.join(userId);
@@ -85,9 +79,16 @@ io.on("connection", (socket) => {
       const recipientSocket = onlineUsers.get(data.to);
       if (recipientSocket) {
         io.to(recipientSocket).emit("receive_message", message);
+      } else {
+        console.log(`Recipient ${data.to} offline, message saved`);
       }
 
-      socket.emit("message_sent", { success: true, message });
+      socket.emit("message_sent", {
+        success: true,
+        message,
+        messageId: message._id,
+        userId: data.from
+      });
     } catch (err) {
       socket.emit("message_sent", { success: false, error: err.message });
     }
@@ -101,6 +102,10 @@ io.on("connection", (socket) => {
         typing: true,
       });
     }
+  });
+
+  socket.on("heartbeat", (data) => {
+    console.log(`Heartbeat from ${data.userId}`);
   });
 
   socket.on("disconnect", () => {
@@ -121,7 +126,7 @@ io.on("connection", (socket) => {
 app.set("io", io);
 app.set("onlineUsers", onlineUsers);
 
-// ✅ Step 9: MongoDB + Server start
+// ✅ Step 8: MongoDB + Server start
 mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
@@ -129,7 +134,6 @@ mongoose
   })
   .then(() => {
     console.log("✅ MongoDB connected");
-
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
       console.log(`✅ Server + Socket.IO running on port ${PORT}`);
