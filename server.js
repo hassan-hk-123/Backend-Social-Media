@@ -11,10 +11,11 @@ const server = http.createServer(app);
 
 // ✅ Step 1: Setup CORS before everything
 app.use(cors({
-  origin: "https://frontend-social-media-five.vercel.app",
+  origin: "http://localhost:3000", // Replace with your frontend URL
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 }));
+
 
 // ✅ Step 2: Manual CORS headers (optional but safe)
 app.use((req, res, next) => {
@@ -71,8 +72,6 @@ io.on("connection", (socket) => {
     socket.emit("online_users", Array.from(onlineUsers.keys()));
   });
 
-  // ❌ REMOVED: Duplicate send_message event - messages.js API route handles this
-  /*
   socket.on("send_message", async (data) => {
     try {
       const message = new Message({
@@ -93,7 +92,6 @@ io.on("connection", (socket) => {
       socket.emit("message_sent", { success: false, error: err.message });
     }
   });
-  */
 
   socket.on("typing", (data) => {
     const recipientSocket = onlineUsers.get(data.to);
