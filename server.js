@@ -16,7 +16,6 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 }));
 
-
 // ✅ Step 2: Manual CORS headers (optional but safe)
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", process.env.FRONTEND_URL);
@@ -72,6 +71,8 @@ io.on("connection", (socket) => {
     socket.emit("online_users", Array.from(onlineUsers.keys()));
   });
 
+  // ❌ REMOVED: Duplicate send_message event - messages.js API route handles this
+  /*
   socket.on("send_message", async (data) => {
     try {
       const message = new Message({
@@ -92,6 +93,7 @@ io.on("connection", (socket) => {
       socket.emit("message_sent", { success: false, error: err.message });
     }
   });
+  */
 
   socket.on("typing", (data) => {
     const recipientSocket = onlineUsers.get(data.to);
