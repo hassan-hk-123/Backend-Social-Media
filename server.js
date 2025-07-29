@@ -11,7 +11,7 @@ const server = http.createServer(app);
 
 // ✅ Step 1: Setup CORS before everything
 app.use(cors({
-  origin: "http://localhost:3000", // Replace with your frontend URL
+  origin: "https://frontend-social-media-five.vercel.app",
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 }));
