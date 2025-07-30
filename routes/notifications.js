@@ -1,28 +1,60 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const Notification = require('../models/Notification');
-const auth = require('../middleware/authMiddleware');
+const Notification = require("../models/Notification");
+const auth = require("../middleware/authMiddleware");
 
-// Get all notifications for the logged-in user
-router.get('/', auth, async (req, res) => {
+// Fetch all notifications for the user
+router.get("/", auth, async (req, res) => {
   try {
     const notifications = await Notification.find({ to: req.user._id })
-      .populate('from', 'username avatarImg')
-      .populate('postId', 'image caption')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .populate("from", "username avatarImg fullName");
     res.json(notifications);
   } catch (err) {
-    res.status(500).json({ error: 'Server error', details: err.message });
+    console.error("Error fetching notifications:", err);
+    res.status(500).json({ success: false, error: "Server error", details: err.message });
+  }
+});
+
+// Mark specific notifications as read
+router.put("/read", auth, async (req, res) => {
+  try {
+    const { notificationIds } = req.body; // Accept array of notification IDs
+    const result = await Notification.updateMany(
+      {
+        _id: { $in: notificationIds },
+        to: req.user._id,
+        read: false,
+      },
+      { $set: { read: true } }
+    );
+
+    console.log('Notifications marked as read:', { notificationIds, modifiedCount: result.modifiedCount });
+
+    res.json({ success: true, modifiedCount: result.modifiedCount });
+  } catch (err) {
+    console.error("Error marking notifications as read:", err);
+    res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 });
 
 // Mark all notifications as read
-router.put('/mark-all-read', auth, async (req, res) => {
+router.put("/read-all", auth, async (req, res) => {
   try {
-    await Notification.updateMany({ to: req.user._id, read: false }, { read: true });
-    res.json({ message: 'All notifications marked as read' });
+    const result = await Notification.updateMany(
+      {
+        to: req.user._id,
+        read: false,
+      },
+      { $set: { read: true } }
+    );
+
+    console.log('All notifications marked as read:', { userId: req.user._id, modifiedCount: result.modifiedCount });
+
+    res.json({ success: true, modifiedCount: result.modifiedCount });
   } catch (err) {
-    res.status(500).json({ error: 'Server error', details: err.message });
+    console.error("Error marking all notifications as read:", err);
+    res.status(500).json({ success: false, error: "Server error", details: err.message });
   }
 });
 
