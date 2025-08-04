@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const verifyToken = require('../middleware/authMiddleware');
 const cors = require('cors');
 const upload = require('../config/multer');
+const { OAuth2Client } = require('google-auth-library');
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -18,11 +19,48 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 router.use(cors({
   origin: process.env.FRONTEND_URL,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 }));
+
+const generateUniqueUsername = async (email) => {
+  // Clean the email prefix and make it username-friendly
+  let baseUsername = email.split('@')[0]
+    .replace(/[^a-zA-Z0-9_]/g, '') // Remove special characters
+    .toLowerCase(); // Convert to lowercase
+  
+  // Ensure minimum length
+  if (baseUsername.length < 3) {
+    baseUsername = baseUsername + 'user';
+  }
+  
+  // Ensure maximum length
+  if (baseUsername.length > 15) {
+    baseUsername = baseUsername.substring(0, 15);
+  }
+  
+  let username = baseUsername;
+  let counter = 1;
+  
+  // Keep trying until we find a unique username
+  while (await User.findOne({ username })) {
+    username = `${baseUsername}${counter}`;
+    counter++;
+    
+    // Prevent infinite loop
+    if (counter > 1000) {
+      // Fallback: use timestamp
+      username = `user${Date.now()}`;
+      break;
+    }
+  }
+  
+  return username;
+};
 
 router.post('/signup', async (req, res) => {
   const { fullName, username, email, password, gender } = req.body;
@@ -55,6 +93,7 @@ router.post('/signup', async (req, res) => {
       password: hashedPassword,
       verificationCode: verificationCode,
       verificationCodeExpiry: Date.now() + 3600000,
+      provider: 'manual',
     });
 
     await user.save();
@@ -96,6 +135,184 @@ router.post('/signup', async (req, res) => {
   }
 });
 
+router.post('/google-login', async (req, res) => {
+  const { idToken } = req.body;
+
+  try {
+    if (!idToken) {
+      return res.status(400).json({ message: 'Google token is required' });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email || !name) {
+      return res.status(400).json({ message: 'Invalid Google account data' });
+    }
+
+    let user = await User.findOne({ email });
+    let isNewUser = false;
+
+    if (!user) {
+      // Generate unique username
+      const username = await generateUniqueUsername(email);
+      
+      user = new User({
+        fullName: name,
+        username,
+        email,
+        avatarImg: picture,
+        provider: 'google',
+        googleId,
+        isVerified: true,
+      });
+      isNewUser = true;
+      await user.save();
+    } else {
+      // Existing user - update Google info if needed
+      if (user.provider !== 'google') {
+        user.googleId = googleId;
+        user.provider = 'google';
+        user.isVerified = true;
+      }
+      
+      // Update profile image if user doesn't have one or if Google has a better one
+      if (!user.avatarImg || (picture && picture !== user.avatarImg)) {
+        user.avatarImg = picture;
+      }
+      
+      await user.save();
+    }
+
+    const token = jwt.sign(
+      { id: user._id, name: user.fullName, role: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      message: isNewUser ? 'User registered and logged in via Google' : 'Login successful via Google',
+      userId: user._id,
+      userName: user.fullName,
+      role: 'user',
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        avatarImg: user.avatarImg,
+        provider: user.provider,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (error) {
+    console.error('Google login error:', error);
+    res.status(500).json({ message: 'Google login failed' });
+  }
+});
+
+// Facebook Login Route
+router.post('/facebook-login', async (req, res) => {
+  const { accessToken } = req.body;
+
+  try {
+    if (!accessToken) {
+      return res.status(400).json({ message: 'Facebook access token is required' });
+    }
+
+    // Verify Facebook access token
+    const response = await fetch(`https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`);
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      return res.status(400).json({ message: 'Invalid Facebook access token' });
+    }
+
+    const { id: facebookId, email, name, picture } = data;
+
+    if (!email || !name) {
+      return res.status(400).json({ message: 'Invalid Facebook account data' });
+    }
+
+    let user = await User.findOne({ email });
+    let isNewUser = false;
+
+    if (!user) {
+      // Generate unique username
+      const username = await generateUniqueUsername(email);
+      
+      user = new User({
+        fullName: name,
+        username,
+        email,
+        avatarImg: picture?.data?.url,
+        provider: 'facebook',
+        facebookId,
+        isVerified: true,
+      });
+      isNewUser = true;
+      await user.save();
+    } else {
+      // Existing user - update Facebook info if needed
+      if (user.provider !== 'facebook') {
+        user.facebookId = facebookId;
+        user.provider = 'facebook';
+        user.isVerified = true;
+      }
+      
+      // Update profile image if user doesn't have one or if Facebook has a better one
+      if (!user.avatarImg || (picture?.data?.url && picture.data.url !== user.avatarImg)) {
+        user.avatarImg = picture?.data?.url;
+      }
+      
+      await user.save();
+    }
+
+    const token = jwt.sign(
+      { id: user._id, name: user.fullName, role: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      message: isNewUser ? 'User registered and logged in via Facebook' : 'Login successful via Facebook',
+      userId: user._id,
+      userName: user.fullName,
+      role: 'user',
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        avatarImg: user.avatarImg,
+        provider: user.provider,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (error) {
+    console.error('Facebook login error:', error);
+    res.status(500).json({ message: 'Facebook login failed' });
+  }
+});
+
 router.post('/verify', async (req, res) => {
   const { token } = req.body;
 
@@ -125,30 +342,37 @@ router.post('/signin', async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials or unverified email' });
     }
 
+    if (user.provider === 'google') {
+      return res.status(400).json({ message: 'Please use Google login for this account' });
+    }
+
+    if (user.provider === 'facebook') {
+      return res.status(400).json({ message: 'Please use Facebook login for this account' });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     const token = jwt.sign(
-      { id: user._id, name: user.name, role: user.role },
+      { id: user._id, name: user.fullName, role: 'user' },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
- res.cookie("token", token, {
-  httpOnly: true,
-  secure: true,          // 🔐 Required for HTTPS
-  sameSite: "None",      // 🌐 Allow cross-domain
-  maxAge: 7 * 24 * 60 * 60 * 1000
-});
-
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     res.json({
       message: 'Login successful',
       userId: user._id,
-      userName: user.name,
-      role: user.role
+      userName: user.fullName,
+      role: 'user',
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -159,10 +383,9 @@ router.post('/signin', async (req, res) => {
 router.post('/logout', (req, res) => {
   try {
     res.clearCookie('token', {
-       httpOnly: true,
-      secure: true,          // 🔐 Required for HTTPS
-      sameSite: "None",      // 🌐 Allow cross-domain
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
     });
     res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
@@ -171,7 +394,6 @@ router.post('/logout', (req, res) => {
   }
 });
 
-
 router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
 
@@ -179,6 +401,20 @@ router.post('/forgot-password', async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ message: 'Email not found' });
+    }
+
+    if (user.provider === 'google') {
+      return res.status(400).json({ 
+        message: 'Password reset is not available for Google accounts. Please use Google login instead.',
+        isGoogleUser: true 
+      });
+    }
+
+    if (user.provider === 'facebook') {
+      return res.status(400).json({ 
+        message: 'Password reset is not available for Facebook accounts. Please use Facebook login instead.',
+        isFacebookUser: true 
+      });
     }
 
     const resetToken = crypto.randomBytes(20).toString('hex');
@@ -237,6 +473,10 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired token' });
     }
 
+    if (user.provider === 'google') {
+      return res.status(400).json({ message: 'Password reset is not available for Google accounts' });
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -269,6 +509,11 @@ router.post('/upload-cover', verifyToken, upload.single('cover'), async (req, re
 
 router.get('/profile/:id', async (req, res) => {
   try {
+    // Validate the ID format
+    if (!req.params.id || !/^[0-9a-fA-F]{24}$/.test(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
+
     const user = await User.findById(req.params.id).select('-password').lean();
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -278,9 +523,17 @@ router.get('/profile/:id', async (req, res) => {
       $or: [{ from: req.params.id, status: 'accepted' }, { to: req.params.id, status: 'accepted' }],
     }).populate('from to', 'fullName username avatarImg');
 
-    const friends = relationships.map(rel => {
-      return rel.from._id.toString() === req.params.id ? rel.to : rel.from;
-    });
+    const friends = relationships
+      .filter(rel => rel.from && rel.to && rel.from._id && rel.to._id) // Enhanced null check
+      .map(rel => {
+        try {
+          return rel.from._id.toString() === req.params.id ? rel.to : rel.from;
+        } catch (err) {
+          console.error('Error processing relationship:', err, rel);
+          return null;
+        }
+      })
+      .filter(friend => friend !== null); // Remove any null friends
 
     user.friends = friends;
     user.friendCount = friends.length;
@@ -292,16 +545,40 @@ router.get('/profile/:id', async (req, res) => {
   }
 });
 
+// Check username availability
+router.get('/check-username/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const existingUser = await User.findOne({ username });
+    res.json({ available: !existingUser });
+  } catch (error) {
+    console.error('Username check error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.put('/profile/:id', async (req, res) => {
-  console.log('PATCH /profile/:id hit');
-  console.log('Body:', req.body);
   const { fullName, username, bio, avatarImg, coverImg, age, address, country, study, dob } = req.body;
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    if (username && username !== user.username) {
+      // Validate username format
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+        return res.status(400).json({ 
+          message: 'Username must be 3-20 characters long and contain only letters, numbers, and underscores' 
+        });
+      }
+      
+      const existingUsername = await User.findOne({ username });
+      if (existingUsername) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+      user.username = username;
+    }
+
     if (fullName) user.fullName = fullName;
-    if (username) user.username = username;
     if (bio) user.bio = bio;
     if (avatarImg) user.avatarImg = avatarImg;
     if (coverImg) user.coverImg = coverImg;
@@ -311,9 +588,7 @@ router.put('/profile/:id', async (req, res) => {
     if (study) user.study = study;
     if (dob) user.dob = dob;
 
-    console.log('User before save:', user);
     await user.save();
-    console.log('User after save:', user);
 
     res.json({ message: 'Profile updated', user: user.toObject({ getters: true }) });
   } catch (error) {
@@ -327,11 +602,22 @@ router.patch('/change-password/:id', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (user.provider === 'google') {
+      return res.status(400).json({ message: 'Password change is not available for Google accounts' });
+    }
+
+    if (user.provider === 'facebook') {
+      return res.status(400).json({ message: 'Password change is not available for Facebook accounts' });
+    }
+
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
+
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
     console.error('Password change error:', error);
@@ -340,7 +626,6 @@ router.patch('/change-password/:id', verifyToken, async (req, res) => {
 });
 
 router.get('/check-token', (req, res) => {
-    console.log("Cookies:", req.cookies);
   const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
   if (!token) return res.status(401).json({ valid: false, message: 'No token' });
 

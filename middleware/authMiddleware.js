@@ -9,9 +9,16 @@ async function verifyToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id); // or decoded._id
+    const user = await User.findById(decoded.id); // or decoded._id
+    
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    req.user = user;
     next();
   } catch (err) {
+    console.error('Auth middleware error:', err);
     res.status(401).json({ error: 'Token is not valid' });
   }
 }
@@ -22,7 +29,10 @@ async function optional(req, res, next) {
   if (!token) return next();
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id);
+    const user = await User.findById(decoded.id);
+    if (user) {
+      req.user = user;
+    }
   } catch (err) {
     // ignore error, treat as guest
   }

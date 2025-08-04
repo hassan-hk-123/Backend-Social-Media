@@ -36,20 +36,39 @@ router.post('/request', auth, async (req, res) => {
 
 // Get incoming requests for user
 router.get('/requests', auth, async (req, res) => {
-  const requests = await Relationship.find({ to: req.user._id, status: 'pending' }).populate('from', 'username avatarImg fullName');
-  res.json(requests);
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const requests = await Relationship.find({ to: req.user._id, status: 'pending' }).populate('from', 'username avatarImg fullName');
+    res.json(requests);
+  } catch (error) {
+    console.error('Get requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Get sent/outgoing requests for user
 router.get('/requests/sent', auth, async (req, res) => {
-  const requests = await Relationship.find({ from: req.user._id, status: 'pending' }).populate('to', 'username avatarImg fullName');
-  res.json(requests);
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const requests = await Relationship.find({ from: req.user._id, status: 'pending' }).populate('to', 'username avatarImg fullName');
+    res.json(requests);
+  } catch (error) {
+    console.error('Get sent requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Cancel a sent friend request
 router.post('/cancel', auth, async (req, res) => {
-  const { requestId } = req.body;
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const { requestId } = req.body;
     const rel = await Relationship.findOneAndDelete({
       _id: requestId,
       from: req.user._id,
@@ -65,8 +84,11 @@ router.post('/cancel', auth, async (req, res) => {
 
 // Accept/Reject request
 router.post('/respond', auth, async (req, res) => {
-  const { requestId, action } = req.body;
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const { requestId, action } = req.body;
     const rel = await Relationship.findById(requestId);
     if (!rel || rel.to.toString() !== req.user._id.toString()) {
       return res.status(404).json({ error: "Request not found" });
@@ -131,26 +153,47 @@ router.post('/respond', auth, async (req, res) => {
 
 // Get friends (accepted relationships)
 router.get('/friends', auth, async (req, res) => {
-  const userId = req.user._id;
-  const rels = await Relationship.find({
-    $or: [
-      { from: userId, status: 'accepted' },
-      { to: userId, status: 'accepted' }
-    ]
-  }).populate('from to', 'username avatarImg');
-  const friends = rels.map(r => {
-    const friend = r.from._id.toString() === userId.toString() ? r.to : r.from;
-    return friend;
-  });
-  res.json(friends);
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const userId = req.user._id;
+    const rels = await Relationship.find({
+      $or: [
+        { from: userId, status: 'accepted' },
+        { to: userId, status: 'accepted' }
+      ]
+    }).populate('from to', 'username avatarImg');
+    
+    const friends = rels
+      .filter(r => r.from && r.to && r.from._id && r.to._id) // Enhanced null check
+      .map(r => {
+        try {
+          const friend = r.from._id.toString() === userId.toString() ? r.to : r.from;
+          return friend;
+        } catch (err) {
+          console.error('Error processing friend relationship:', err, r);
+          return null;
+        }
+      })
+      .filter(friend => friend !== null); // Remove any null friends
+    
+    res.json(friends);
+  } catch (error) {
+    console.error('Get friends error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Unfriend a user
 router.post('/unfriend', auth, async (req, res) => {
-  const { friendId } = req.body;
-  const userId = req.user._id;
-
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const { friendId } = req.body;
+    const userId = req.user._id;
+
     const result = await Relationship.findOneAndDelete({
       $or: [
         { from: userId, to: friendId, status: 'accepted' },
@@ -193,8 +236,16 @@ router.post('/unfriend', auth, async (req, res) => {
 
 // Get all users (for friend list)
 router.get('/all-users', auth, async (req, res) => {
-  const users = await User.find({}, 'username avatarImg fullName');
-  res.json(users);
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    const users = await User.find({}, 'username avatarImg fullName');
+    res.json(users);
+  } catch (error) {
+    console.error('Get all users error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Get connections (friends) for a specific user
@@ -210,14 +261,53 @@ router.get('/:userId/connections', auth, async (req, res) => {
       return res.json([]);
     }
 
-    const connections = relationships.map(rel => {
-      return rel.from._id.toString() === userId ? rel.to : rel.from;
-    });
+    const connections = relationships
+      .filter(rel => rel.from && rel.to && rel.from._id && rel.to._id)
+      .map(rel => {
+        try {
+          return rel.from._id.toString() === userId ? rel.to : rel.from;
+        } catch (err) {
+          console.error('Error processing connection:', err, rel);
+          return null;
+        }
+      })
+      .filter(connection => connection !== null);
 
     res.json(connections);
   } catch (error) {
     console.error("Error fetching connections:", error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Cleanup orphaned relationships (admin route)
+router.delete('/cleanup', auth, async (req, res) => {
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Find relationships where from or to user doesn't exist
+    const relationships = await Relationship.find({});
+    let deletedCount = 0;
+
+    for (const rel of relationships) {
+      const fromUser = await User.findById(rel.from);
+      const toUser = await User.findById(rel.to);
+      
+      if (!fromUser || !toUser) {
+        await Relationship.findByIdAndDelete(rel._id);
+        deletedCount++;
+        console.log(`Deleted orphaned relationship: ${rel._id}`);
+      }
+    }
+
+    res.json({ 
+      message: `Cleanup completed. Deleted ${deletedCount} orphaned relationships.` 
+    });
+  } catch (error) {
+    console.error('Cleanup error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

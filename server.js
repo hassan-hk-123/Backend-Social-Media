@@ -34,8 +34,13 @@ app.use("/api/notifications", require("./routes/notifications"));
 
 // ✅ Step 5: Error Handling Middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: "Error in Server" });
+  console.error('Server Error:', err.stack);
+  res.status(500).json({ message: "Error in Server", error: err.message });
+});
+
+// ✅ Step 5.1: 404 Handler
+app.use('*', (req, res) => {
+  res.status(404).json({ message: "Route not found" });
 });
 
 // ✅ Step 6: Socket.IO Setup
@@ -180,4 +185,32 @@ mongoose
   })
   .catch((err) => {
     console.log("❌ MongoDB connection error:", err);
+    process.exit(1);
   });
+
+// ✅ Step 9: Process Error Handling
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    mongoose.connection.close();
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  server.close(() => {
+    mongoose.connection.close();
+    process.exit(0);
+  });
+});
